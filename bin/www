@@ -1,0 +1,181 @@
+#!/usr/bin/env node
+
+/**
+ * Module dependencies.
+ */
+
+var app = require('../app');
+var debug = require('debug')('chat:server');
+var http = require('http');
+
+//基本配置
+var config = require('./config');
+
+/**
+ * Get port from environment and store in Express.
+ */
+
+var port = normalizePort(process.env.PORT || config.webPort);
+app.set('port', port);
+
+/**
+ * Create HTTP server.
+ */
+
+var server = http.createServer(app);
+
+/**
+ * Listen on provided port, on all network interfaces.
+ */
+
+server.listen(port);
+server.on('error', onError);
+server.on('listening', onListening);
+
+/**
+ * Normalize a port into a number, string, or false.
+ */
+
+function normalizePort(val) {
+  var port = parseInt(val, 10);
+
+  if (isNaN(port)) {
+    // named pipe
+    return val;
+  }
+
+  if (port >= 0) {
+    // port number
+    return port;
+  }
+
+  return false;
+}
+
+/**
+ * Event listener for HTTP server "error" event.
+ */
+
+function onError(error) {
+  if (error.syscall !== 'listen') {
+    throw error;
+  }
+
+  var bind = typeof port === 'string'
+    ? 'Pipe ' + port
+    : 'Port ' + port;
+
+  // handle specific listen errors with friendly messages
+  switch (error.code) {
+    case 'EACCES':
+      console.error(bind + ' requires elevated privileges');
+      process.exit(1);
+      break;
+    case 'EADDRINUSE':
+      console.error(bind + ' is already in use');
+      process.exit(1);
+      break;
+    default:
+      throw error;
+  }
+}
+
+/**
+ * Event listener for HTTP server "listening" event.
+ */
+
+function onListening() {
+  var addr = server.address();
+  var bind = typeof addr === 'string'
+    ? 'pipe ' + addr
+    : 'port ' + addr.port;
+  debug('Listening on ' + bind);
+}
+
+
+//==================web socket service==================//
+
+var socket_app = require('http').createServer(handler);
+var io = require('socket.io')(socket_app);
+socket_app.listen(config.webSocketPort);
+
+console.log('Web server listening on port ' + port);
+console.log('Websocket server listening on port ' + config.webSocketPort);
+
+function handler (req, res) {
+    //跨域处理，指定web socket监听端口的信任域
+    res.writeHead(200, {
+        "Access-Control-Allow-Origin": "http://localhost:" + config.webSocketPort,
+        "Access-Control-Allow-Credentials": true }
+    );
+    res.end();
+}
+
+var users = [];  //用户列表
+
+io.on('connection', function (socket) {
+
+    console.log("用户连接： "+socket.id);
+
+    socket.emit('connected', {users: users});
+
+    //用户设置昵称事件
+    socket.on('setNickname', function (data) {
+        var user = {
+            _id: socket.id,
+            nickname: data.nickname
+        }
+
+        var isNicknameExists = false;
+        for (var i = 0, n = users.length; i < n; i++) {
+            if (users[i].nickname === user.nickname) {
+                isNicknameExists = true;
+            }
+        }
+
+        if (isNicknameExists) {
+            socket.emit('newMessage', {message: '用户名【' + user.nickname + '】已经存在了哦', type: 'error'});
+        }
+        else {
+            users.push(user);
+            socket.emit('refreshUsers', {users: users});
+            socket.broadcast.emit('refreshUsers', {users: users});
+            var message = '【' + user.nickname + '】加入聊天';
+            socket.emit('newMessage', {message: message, type: 'sysInfo'});
+            socket.broadcast.emit('newMessage', {message: message, type: 'sysInfo'});
+        }
+    });
+
+    //用户离线事件
+    socket.on('disconnect', function () {
+        console.log("用户断开连接： "+socket.id);
+        var leaveUser = {};
+        users = users.filter(function(user){
+            if (user._id === socket.id) {
+                leaveUser = user;
+                return false;
+            }
+            return true;
+        });
+
+        socket.broadcast.emit('refreshUsers', {users: users});
+
+        if (leaveUser.nickname) {
+            socket.emit('newMessage', {message: '【' + leaveUser.nickname + '】离开了聊天', type: 'sysInfo'});
+            socket.broadcast.emit('newMessage', {message: '【' + leaveUser.nickname + '】离开了聊天', type: 'sysInfo'});
+        }
+    });
+
+    //新消息事件
+    socket.on('newMessage', function (data) {
+        var message = data.message;
+        var sender = '';
+        users.forEach(function (user) {
+            if (user._id === socket.id) {
+                sender = user.nickname;
+            }
+        });
+        socket.emit('newMessage', {message: message, sender: sender, type: 'message'});
+        socket.broadcast.emit('newMessage', {message: message, sender: sender ,type: 'message'});
+    });
+});

@@ -1,0 +1,26 @@
+doctype html
+html
+    head
+        title=逗比聊天室
+        meta(charset='utf-8')
+        link(rel='stylesheet', href='/stylesheets/alertify.core.css')
+        link(rel='stylesheet', href='/stylesheets/alertify.default.css')
+        link(rel='stylesheet', href='/stylesheets/chat.css')
+
+        script(src='/javascripts/alertify.js')
+        script(src='/javascripts/jquery-1.9.1.js')
+        script(src='/javascripts/socket.io.js')
+    body
+        div#mask
+        div#msg
+
+        div.outside
+            div.myContainer
+                div#panel.panel
+            div#membersList.membersList
+                div.membersList-title 成员
+            div.myInputContainer
+                textarea#myText.myTextArea
+                button#sendBtn.btn.btn-success 发送
+
+    script(src='/javascripts/chat.js')
